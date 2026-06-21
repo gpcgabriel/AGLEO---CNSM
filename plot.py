@@ -704,3 +704,93 @@ def plot_avg_resource_consumption(algorithm_names, scenarios, num_repetitions, c
         plot(avg_cpu, avg_steps, "Step", "Avg CPU Consumption per Application", f"avg_cpu_{scenario}.png", current_path)
         # Plot memory
         plot(avg_mem, avg_steps, "Step", "Avg Memory Consumption per Application", f"avg_memory_{scenario}.png", current_path)
+
+# ==========================================================
+# SATELLITE RESOURCE USAGE
+# ==========================================================
+def plot_satellite_resource_usage(algorithm_names, scenarios, num_repetitions, current_path):
+    for scenario in scenarios:
+        print(f"Processing satellite resource usage - scenario: {scenario}")
+        avg_cpu_util = {}
+        avg_mem_util = {}
+        avg_sto_util = {}
+        avg_steps = {}
+
+        for alg in algorithm_names:
+            reps_cpu = []
+            reps_mem = []
+            reps_sto = []
+            captured_steps = []
+
+            for rep in range(1, num_repetitions + 1):
+                if num_repetitions == 1:
+                    file_path = build_path(current_path, alg, scenario, "ProcessUnit.jsonl")
+                else:
+                    file_path = build_path(current_path, alg, scenario, "ProcessUnit.jsonl", rep)
+
+                if not os.path.isfile(file_path):
+                    continue
+
+                cpu_util_sum = {}
+                mem_util_sum = {}
+                sto_util_sum = {}
+                count_sat_pus = {}
+
+                for data in read_jsonl(file_path):
+                    step = data["Step"]
+
+                    cpu_util_sum.setdefault(step, 0.0)
+                    mem_util_sum.setdefault(step, 0.0)
+                    sto_util_sum.setdefault(step, 0.0)
+                    count_sat_pus.setdefault(step, 0)
+
+                    for metric in data["metrics"]:
+                        coords = metric.get("Coordinates")
+                        if not coords or len(coords) < 3 or coords[2] <= 10:
+                            continue
+
+                        cpu = metric.get("CPU", 0)
+                        mem = metric.get("Memory", 0)
+                        sto = metric.get("Storage", 0)
+                        cpu_demand = metric.get("CPU Demand", 0)
+                        mem_demand = metric.get("Memory Demand", 0)
+                        sto_demand = metric.get("Storage Demand", 0)
+
+                        if cpu > 0:
+                            cpu_util_sum[step] += cpu_demand / cpu
+                        if mem > 0:
+                            mem_util_sum[step] += mem_demand / mem
+                        if sto > 0:
+                            sto_util_sum[step] += sto_demand / sto
+                        count_sat_pus[step] += 1
+
+                if cpu_util_sum:
+                    steps = sorted(cpu_util_sum.keys())
+                    curr_cpu = []
+                    curr_mem = []
+                    curr_sto = []
+
+                    for step in steps:
+                        n = count_sat_pus[step]
+                        curr_cpu.append(cpu_util_sum[step] / n if n > 0 else 0)
+                        curr_mem.append(mem_util_sum[step] / n if n > 0 else 0)
+                        curr_sto.append(sto_util_sum[step] / n if n > 0 else 0)
+
+                    reps_cpu.append(curr_cpu)
+                    reps_mem.append(curr_mem)
+                    reps_sto.append(curr_sto)
+
+                    if not captured_steps:
+                        captured_steps = steps
+
+            if reps_cpu:
+                avg_cpu_util[alg] = calculate_average(reps_cpu)
+                avg_mem_util[alg] = calculate_average(reps_mem)
+                avg_sto_util[alg] = calculate_average(reps_sto)
+
+                min_len = len(avg_cpu_util[alg])
+                avg_steps[alg] = captured_steps[:min_len]
+
+        plot(avg_cpu_util, avg_steps, "Step", "Avg Satellite CPU Utilization", f"satellite_cpu_{scenario}.png", current_path)
+        plot(avg_mem_util, avg_steps, "Step", "Avg Satellite Memory Utilization", f"satellite_memory_{scenario}.png", current_path)
+        plot(avg_sto_util, avg_steps, "Step", "Avg Satellite Storage Utilization", f"satellite_storage_{scenario}.png", current_path)

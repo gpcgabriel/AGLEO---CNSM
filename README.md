@@ -33,6 +33,8 @@ Each simulation step runs the following lifecycle via the **Scheduler**:
 |-----------|----------|
 | `best_fit_allocation` | Packs applications into the tightest-fitting ProcessUnit, minimizing wasted CPU/MEM |
 | `longest_duration_allocation` | Assigns to the satellite with the longest remaining visibility time |
+| `latency_aware_allocation` | Assigns to the ProcessUnit with the minimum geodesic distance to the user, minimizing propagation delay |
+| `load_balanced_allocation` | Distributes applications across ProcessUnits with the lowest utilization ratio (CPU + MEM + STORAGE demand / capacity) |
 | `hybrid_allocation` | Splits applications between best-fit and longest-duration strategies |
 | `simple_allocation` | First-fit with improvement check |
 | `random_allocation` | Random capable ProcessUnit |
@@ -57,7 +59,7 @@ At each simulation step, every enabled ground station:
 
 ### AGLEO vs. Traditional Algorithms
 
-| Aspect | Traditional | AGLEO (with `--llm`) |
+| Aspect | Traditional | AGLEO (with `--algorithm agentic`) |
 |--------|-------------|----------------------|
 | Decision logic | Fixed heuristic | Context-aware LLM reasoning |
 | Adaptability | Static per-simulation | Dynamic per-step, per-ground-station |
@@ -69,7 +71,7 @@ At each simulation step, every enabled ground station:
 ## Requirements
 
 - Python 3.12+
-- [Ollama](https://ollama.ai) running locally with `llama3.1:8b` model (for AGLEO/`--llm` mode)
+- [Ollama](https://ollama.ai) running locally with `llama3.1:8b` model (for AGLEO/`--algorithm agentic` mode)
 - Dependencies: `pip install -r requirements.txt`
 
 ### Input Files
@@ -86,7 +88,7 @@ Run `python datasets/create_topology.py` to generate synthetic topologies.
 
 ## Running the Simulation
 
-### Basic Comparison (No LLM)
+### Best-Fit Allocation
 
 ```bash
 python main.py ^
@@ -97,13 +99,46 @@ python main.py ^
     --num_steps 15
 ```
 
+### Longest-Duration Allocation
+
+```bash
+python main.py ^
+    --dataset datasets/rnp.gml ^
+    --satellites datasets/satellites_brazil.json ^
+    --algorithm longest_duration_allocation ^
+    --scenario hybrid ^
+    --num_steps 15
+```
+
+### Latency-Aware Allocation
+
+```bash
+python main.py ^
+    --dataset datasets/rnp.gml ^
+    --satellites datasets/satellites_brazil.json ^
+    --algorithm latency_aware_allocation ^
+    --scenario hybrid ^
+    --num_steps 15
+```
+
+### Load-Balanced Allocation
+
+```bash
+python main.py ^
+    --dataset datasets/rnp.gml ^
+    --satellites datasets/satellites_brazil.json ^
+    --algorithm load_balanced_allocation ^
+    --scenario hybrid ^
+    --num_steps 15
+```
+
 ### Run with AGLEO (LLM Orchestrator)
 
 ```bash
 python main.py ^
     --dataset datasets/rnp.gml ^
     --satellites datasets/satellites_brazil.json ^
-    --llm ^
+    --algorithm agentic ^
     --scenario hybrid ^
     --num_steps 15
 ```
@@ -128,22 +163,35 @@ python main.py --dataset datasets/rnp.gml --satellites datasets/satellites_brazi
 python main.py --dataset datasets/rnp.gml --satellites datasets/satellites_brazil.json --algorithm longest_duration_allocation --scenario hybrid --num_steps 15
 ```
 
+### Run All Comparisons (Script)
+
+Use the provided script to run all algorithms sequentially, with agentic last:
+
+```bash
+chmod +x run_comparison.sh
+./run_comparison.sh
+```
+
+The script accepts the same parameters as `main.py`:
+```bash
+./run_comparison.sh --dataset datasets/rnp.gml --satellites datasets/satellites_brazil.json --scenario hybrid --num_steps 15 --repetitions 3
+```
+
 ### Command-Line Arguments
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--dataset` | str | required | Path to ground topology GML file |
 | `--satellites` | str | required | Path to satellite trajectory JSON |
-| `--algorithm` | str | — | Allocation algorithm (`best_fit_allocation`, `longest_duration_allocation`) |
+| `--algorithm` | str | `best_fit_allocation` | Allocation algorithm: `best_fit_allocation`, `longest_duration_allocation`, `latency_aware_allocation`, `load_balanced_allocation`, or `agentic` |
 | `--scenario` | str | required | `terrestrial`, `leo`, or `hybrid` |
 | `--num_users` | int | 100 | Number of users to generate |
 | `--num_satellites` | int | 25 | Max satellites to use |
 | `--num_steps` | int | 15 | Number of simulation steps |
 | `--logs_dir` | str | `logs` | Output directory |
 | `--repetitions` | int | 1 | Number of repetitions for statistical averaging |
-| `--llm` | flag | off | Enable AGLEO (LLM orchestrator) |
 
-When `--llm` is used, `--algorithm` is ignored — the simulation runs `best_fit_allocation`, `longest_duration_allocation`, and `llm_orchestrator` for comparison.
+When `--algorithm agentic` is used, the LLM orchestrator is enabled on each ground station. Each ground station uses an Agno Agent (Ollama + Llama 3.1 8B) to decide per-application whether to use `best_fit` or `longest_duration` allocation, with fallback to `best_fit_allocation` on error.
 
 ---
 
@@ -166,7 +214,7 @@ All graphs are generated automatically after the simulation completes and saved 
 | `logs/avg_cpu_{scenario}.png` | Average CPU consumption per application |
 | `logs/avg_memory_{scenario}.png` | Average memory consumption per application |
 
-Each graph compares **all three algorithms** side-by-side: `best_fit_allocation`, `longest_duration_allocation`, and `llm_orchestrator`.
+Each graph compares **all algorithms** side-by-side: `best_fit_allocation`, `longest_duration_allocation`, `latency_aware_allocation`, `load_balanced_allocation`, and `llm_orchestrator`. If a particular algorithm has not been run yet, it is simply skipped.
 
 Simply open any `.png` file from the `logs/` directory in your file explorer or image viewer.
 
@@ -177,7 +225,7 @@ Per-repetition detailed logs are saved to:
 logs/{algorithm}/{scenario}/rep{rep}/
 ```
 
-LLM decisions (when `--llm` is used):
+LLM decisions (when `--algorithm agentic` is used):
 ```
 logs/agent_log.jsonl
 ```
@@ -214,6 +262,7 @@ AGLEO---CNSM/
 │   ├── mobility_models/          # User mobility (random between GS)
 │   └── orbit_models/             # Linear orbit estimation
 ├── dataset_generator/            # Standalone dataset CLI generator
+├── run_comparison.ps1            # Script to run all algorithms sequentially
 ├── datasets/                     # Pre-generated topologies & satellite data
 └── logs/                         # Simulation output (logs + plots)
 ```

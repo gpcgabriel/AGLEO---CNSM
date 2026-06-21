@@ -3,3 +3,5 @@ from .random_allocation import random_allocation
 from .simple_allocation import simple_allocation
 from .longest_duration_allocation import longest_duration_allocation
 from .hybrid_allocation import hybrid_allocation
+from .latency_aware_allocation import latency_aware_allocation
+from .load_balanced_allocation import load_balanced_allocation

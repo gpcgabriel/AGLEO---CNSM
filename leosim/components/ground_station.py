@@ -48,21 +48,18 @@ class GroundStation(ComponentManager):
                          options={"temperature": 0, "num_ctx": 8192}),
             instructions=[
                 "You allocate apps in a LEO satellite network.",
-                "Objective: maximize provisioned apps. Split apps between two strategies.",
+                "Objective: maximize provisioned apps. Choose a strategy per app from four options.",
                 "",
-                "best_fit: packs apps into tightest-fitting PU. Good when CPU/mem is tight.",
+                "best_fit: packs apps into the tightest-fitting PU, minimizing wasted resources.",
                 "",
-                "longest_duration: picks satellite with longest visibility. Good when exposure time matters.",
+                "longest_duration: picks the satellite with the longest remaining visibility time for the user.",
                 "",
-                "Output ONLY a JSON object with two arrays of app IDs. No other text.",
-                "Example: {\"best_fit\": [3, 6], \"longest_duration\": [5, 7]}",
-                "For empty lists: {\"best_fit\": [], \"longest_duration\": [3, 6]}",
+                "latency_aware: assigns to the PU closest to the user (minimum geodesic distance), minimizing propagation delay.",
                 "",
-                "Guidelines:",
-                "- In 'terrestrial' scenario: put all apps in best_fit.",
-                "- Apps with remaining_time > 10: try longest_duration.",
-                "- Satellites with short future coords: use longest_duration.",
-                "- When many apps compete for few resources: best_fit.",
+                "load_balanced: distributes apps to the PU with the lowest current utilization (CPU + MEM + STORAGE).",
+                "",
+                "Output ONLY a JSON object with four arrays of app IDs. No other text.",
+                "Example: {\"best_fit\": [1, 2], \"longest_duration\": [3], \"latency_aware\": [4], \"load_balanced\": [5]}",
             ],
         )
 
@@ -85,14 +82,19 @@ class GroundStation(ComponentManager):
         }
         return component
 
-    def allocate_apps(self, best_fit_apps: list, longest_duration_apps: list) -> str:
+    def allocate_apps(self, best_fit_apps: list, longest_duration_apps: list,
+                      latency_aware_apps: list, load_balanced_apps: list) -> str:
         from leosim.components.allocation_algorithms.hybrid_allocation import hybrid_allocation
 
         model = ComponentManager.model
         if not model:
             return "Error: Simulator model not initialized."
 
-        results = hybrid_allocation(model, self.llm_params, best_fit_apps, longest_duration_apps)
+        results = hybrid_allocation(
+            model, self.llm_params,
+            best_fit_apps, longest_duration_apps,
+            latency_aware_apps, load_balanced_apps
+        )
 
         summary = f"Provisioned: {results['provisioned']}, Already: {results['already']}, Failed: {results['failed']}"
         print(f"  [LLM] GS_{self.id} | {summary}")
@@ -101,6 +103,8 @@ class GroundStation(ComponentManager):
             "step": model.scheduler.steps,
             "best_fit_apps": best_fit_apps,
             "longest_duration_apps": longest_duration_apps,
+            "latency_aware_apps": latency_aware_apps,
+            "load_balanced_apps": load_balanced_apps,
             "results": results,
         })
 
@@ -167,9 +171,10 @@ class GroundStation(ComponentManager):
             for h in self.decision_history[-5:]:
                 r = h["results"]
                 history_context += (
-                    f"Step {h['step']}: best_fit={h['best_fit_apps']} "
-                    f"longest_dur={h['longest_duration_apps']} "
-                    f"-> provisioned={r['provisioned']} failed={r['failed']}\n"
+                    f"Step {h['step']}: "
+                    f"bf={h['best_fit_apps']} ld={h['longest_duration_apps']} "
+                    f"la={h['latency_aware_apps']} lb={h['load_balanced_apps']} "
+                    f"-> prov={r['provisioned']} fail={r['failed']}\n"
                 )
 
         prompt = f"{pending_summary}\nNetwork State (JSON):\n{state_json}\n\n{history_context}\nOutput JSON allocation."
@@ -188,15 +193,22 @@ class GroundStation(ComponentManager):
                 parsed = loads(json_match.group())
                 best_fit_ids = parsed.get("best_fit", [])
                 longest_dur_ids = parsed.get("longest_duration", [])
+                latency_aware_ids = parsed.get("latency_aware", [])
+                load_balanced_ids = parsed.get("load_balanced", [])
             else:
                 raise ValueError(f"No JSON found in response: {content[:200]}")
 
-            allocation_result = self.allocate_apps(best_fit_ids, longest_dur_ids)
+            allocation_result = self.allocate_apps(
+                best_fit_ids, longest_dur_ids,
+                latency_aware_ids, load_balanced_ids
+            )
             output_data = {
                 "step": model.scheduler.steps,
                 "ground_station": self.id,
                 "best_fit": best_fit_ids,
-                "longest": longest_dur_ids,
+                "longest_duration": longest_dur_ids,
+                "latency_aware": latency_aware_ids,
+                "load_balanced": load_balanced_ids,
                 "result": allocation_result,
             }
         except Exception:

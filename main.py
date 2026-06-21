@@ -11,7 +11,8 @@ from plot import (
     plot_provisioned_in_topology,
     plot_groundstation_links_by_id,
     plot_delay_by_groundstation,
-    plot_avg_resource_consumption
+    plot_avg_resource_consumption,
+    plot_satellite_resource_usage
 )
 
 DATASETS_DIR = "datasets"
@@ -20,7 +21,9 @@ ALGORITHMS = {
     # "random_allocation": random_allocation,
     # "simple_allocation": simple_allocation,
     "best_fit_allocation": best_fit_allocation,
-    "longest_duration_allocation": longest_duration_allocation
+    "longest_duration_allocation": longest_duration_allocation,
+    "latency_aware_allocation": latency_aware_allocation,
+    "load_balanced_allocation": load_balanced_allocation,
 }
 
 def clear_all_components():
@@ -34,9 +37,10 @@ def stopping_criterion(model):
 def main(args):
     os.makedirs(DATASETS_DIR, exist_ok=True)
 
-    args.algorithm = args.algorithm if not args.llm else "llm_orchestrator"
+    is_agentic = args.algorithm == "agentic"
+    args.algorithm = "llm_orchestrator" if is_agentic else args.algorithm
 
-    algorithm = "llm_orchestrator" if args.llm else ALGORITHMS[args.algorithm]
+    algorithm = True if is_agentic else ALGORITHMS[args.algorithm]
 
     for rep in range(1, args.repetitions + 1):
 
@@ -116,7 +120,7 @@ def main(args):
 
         sim = Simulator(
             stopping_criterion=stopping_criterion,
-            resource_management_algorithm=args.llm if args.llm else algorithm,
+            resource_management_algorithm=algorithm,
             topology_management_algorithm=default_topology_management,
             ignore_list=[
                 # NetworkFlow,
@@ -140,7 +144,7 @@ def main(args):
     # =============
     # Plot results
     # =============
-    algs = ["best_fit_allocation", "longest_duration_allocation", "llm_orchestrator"]
+    algs = ["best_fit_allocation", "longest_duration_allocation", "latency_aware_allocation", "load_balanced_allocation", "llm_orchestrator"]
     scenarios = [str(args.scenario)]
 
     compare_algorithms_averaged(algs, scenarios, args.repetitions, args.logs_dir)
@@ -149,20 +153,20 @@ def main(args):
     plot_provisioned_in_topology(algs, scenarios, args.repetitions, args.logs_dir)
     plot_delay_by_groundstation(algs, scenarios, args.repetitions, args.logs_dir, ground_station_id=1)
     plot_avg_resource_consumption(algs, scenarios, args.repetitions, args.logs_dir)
+    plot_satellite_resource_usage(algs, scenarios, args.repetitions, args.logs_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LEO Simulation Runner")
 
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--satellites", required=True)
-    parser.add_argument("--algorithm", choices=ALGORITHMS.keys())
+    parser.add_argument("--algorithm", default="best_fit_allocation", choices=["best_fit_allocation", "longest_duration_allocation", "latency_aware_allocation", "load_balanced_allocation", "agentic"])
     parser.add_argument("--scenario", required=True, choices=["terrestrial", "leo", "hybrid"])
     parser.add_argument("--num_users", type=int, default=100)
     parser.add_argument("--num_satellites", type=int, default=25)
     parser.add_argument("--num_steps", type=int, default=15)
     parser.add_argument("--logs_dir", default="logs")
     parser.add_argument("--repetitions", type=int, default=1)
-    parser.add_argument("--llm", action="store_true", help="Enable LLM orchestrator in GS")
 
     args = parser.parse_args()
 
