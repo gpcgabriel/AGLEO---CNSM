@@ -121,6 +121,7 @@ def main(args):
         sim = Simulator(
             stopping_criterion=stopping_criterion,
             resource_management_algorithm=algorithm,
+            resource_management_algorithm_parameters={"verbose": args.verbose},
             topology_management_algorithm=default_topology_management,
             ignore_list=[
                 # NetworkFlow,
@@ -167,6 +168,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_steps", type=int, default=15)
     parser.add_argument("--logs_dir", default="logs")
     parser.add_argument("--repetitions", type=int, default=1)
+    parser.add_argument("--v", action="store_true", dest="verbose", help="Verbose output: print LLM prompt and response")
 
     args = parser.parse_args()
 

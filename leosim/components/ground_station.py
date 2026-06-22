@@ -146,23 +146,83 @@ class GroundStation(ComponentManager):
 
         scenario = parameters.get('scenario', 'hybrid')
 
+        all_apps = Application.export_applications()
+        pending_app_ids = [
+            int(k.split("_")[1]) for k, v in all_apps.items() if v.get("pending")
+        ]
+        pending_set = set(pending_app_ids)
+
+        all_users = User.export_users()
+        relevant_users = {
+            uid: uinfo for uid, uinfo in all_users.items()
+            if any(aid in pending_set for aid in uinfo.get("pending_apps", []))
+        }
+
+        relevant_sat_ids = set()
+        for uinfo in relevant_users.values():
+            for ap in uinfo.get("access_points", []):
+                if ap.startswith("Satellite_"):
+                    relevant_sat_ids.add(int(ap.split("_")[1]))
+
+        from geopy.distance import geodesic
+        from math import sqrt
+        for sat in Satellite.all():
+            if sat.is_gateway and sat.active and sat.coordinates and self.coordinates:
+                gd = geodesic(self.coordinates[:2], sat.coordinates[:2]).kilometers
+                ad = (self.coordinates[2] - sat.coordinates[2]) / 1000
+                dist = sqrt(gd ** 2 + ad ** 2)
+                if dist < min(self.max_connection_range, sat.max_connection_range):
+                    relevant_sat_ids.add(sat.id)
+
+        all_sats = Satellite.export_satellites()
+        trimmed_sats = {
+            sid: sinfo for sid, sinfo in all_sats.items()
+            if int(sid.split("_")[1]) in relevant_sat_ids
+        }
+
+        trimmed_pu_ids = set()
+        for sinfo in trimmed_sats.values():
+            pu = sinfo.get("pu")
+            if pu:
+                trimmed_pu_ids.add(pu["id"])
+        for gs_pu in (self.process_unit or []):
+            trimmed_pu_ids.add(gs_pu.id)
+
+        all_pus = ProcessUnit.export_processunits()
+        trimmed_pus = {
+            pid: pinfo for pid, pinfo in all_pus.items()
+            if int(pid.split("_")[1]) in trimmed_pu_ids
+        }
+
+        trimmed_apps = {
+            aid: ainfo for aid, ainfo in all_apps.items()
+            if int(aid.split("_")[1]) in pending_set or ainfo.get("available")
+        }
+
+        trimmed_topology = model.topology.export_topology()
+        trimmed_topology["user_sat"] = [
+            link for link in trimmed_topology.get("user_sat", [])
+            if link["user"] in {int(u.split("_")[1]) for u in relevant_users}
+        ]
+        trimmed_topology["gs_sat"] = [
+            link for link in trimmed_topology.get("gs_sat", [])
+            if link["gs"] == self.id
+        ]
+
         state = {
             "step": model.scheduler.steps,
             "scenario": scenario,
             "ground_station": GroundStation.export_groundstations().get(f"GS_{self.id}", {}),
-            "satellites": Satellite.export_satellites(),
-            "users": User.export_users(),
-            "process_units": ProcessUnit.export_processunits(),
-            "applications": Application.export_applications(),
-            "topology": model.topology.export_topology(),
+            "satellites": trimmed_sats,
+            "users": relevant_users,
+            "process_units": trimmed_pus,
+            "applications": trimmed_apps,
+            "topology": trimmed_topology,
         }
 
         state_json = dumps(state, default=str)
         prompt_length = len(state_json)
 
-        pending_app_ids = [
-            int(k.split("_")[1]) for k, v in state["applications"].items() if v.get("pending")
-        ]
         pending_summary = f"PENDING APPS (IDs to allocate): {pending_app_ids}"
 
         history_context = ""
@@ -179,29 +239,95 @@ class GroundStation(ComponentManager):
 
         prompt = f"{pending_summary}\nNetwork State (JSON):\n{state_json}\n\n{history_context}\nOutput JSON allocation."
 
+        verbose = parameters.get("verbose", False)
         pending = sum(1 for a in state["applications"].values() if a.get("pending"))
-        print(f"\n  [LLM] Step {model.scheduler.steps} | GS_{self.id} | "
-              f"{pending} apps pending | prompt ~{prompt_length} chars | "
-              f"history: {len(self.decision_history)} steps")
+        print(f"  [LLM] Step {model.scheduler.steps} | GS_{self.id} | {pending} pending | prompt ~{prompt_length} chars")
+
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"  LLM PROMPT - Step {model.scheduler.steps} | GS_{self.id}")
+            print(f"{'='*60}")
+            print(f"  Scenario: {scenario}")
+            print(f"  Pending apps: {pending_app_ids}")
+            print(f"  Past decisions: {len(self.decision_history)} steps")
+
+            print(f"\n  --- Satellites ---")
+            for sid, sinfo in state["satellites"].items():
+                pu = sinfo.get("pu")
+                pu_str = f" | PU: cpu_free={pu['cpu_free']} mem_free={pu['mem_free']} sto_free={pu['sto_free']}" if pu else ""
+                print(f"    {sid}: pos={sinfo['pos']} active={sinfo['active']}{pu_str}")
+
+            print(f"\n  --- Process Units ---")
+            for pid, pinfo in state["process_units"].items():
+                print(f"    {pid}: cpu={pinfo['cpu_used']}/{pinfo['cpu_total']} "
+                      f"mem={pinfo['mem_used']}/{pinfo['mem_total']} "
+                      f"sto={pinfo['sto_used']}/{pinfo['sto_total']} "
+                      f"apps={pinfo['apps']} available={pinfo['available']}")
+
+            print(f"\n  --- Users & Apps ---")
+            for uid, uinfo in state["users"].items():
+                print(f"    {uid}: pos={uinfo['pos']} range={uinfo['range']} "
+                      f"access_points={uinfo['access_points']} pending_apps={uinfo['pending_apps']}")
+
+            print(f"\n  --- Full Prompt ---")
+            print(prompt)
+            print(f"\n{'='*60}")
+            print(f"  END PROMPT")
+            print(f"{'='*60}")
 
         try:
             response = self.offloading_agent.run(prompt, max_retries=1)
             content = response.content.strip()
 
-            json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
-            if json_match:
-                parsed = loads(json_match.group())
-                best_fit_ids = parsed.get("best_fit", [])
-                longest_dur_ids = parsed.get("longest_duration", [])
-                latency_aware_ids = parsed.get("latency_aware", [])
-                load_balanced_ids = parsed.get("load_balanced", [])
-            else:
+            start = content.find('{')
+            end = content.rfind('}')
+            if start == -1 or end == -1 or end <= start:
                 raise ValueError(f"No JSON found in response: {content[:200]}")
+
+            json_str = content[start:end+1]
+
+            try:
+                parsed = loads(json_str)
+            except Exception:
+                import ast
+                try:
+                    parsed = ast.literal_eval(json_str)
+                except Exception as e2:
+                    raise ValueError(f"Failed to parse LLM response: {e2} | raw block: {json_str[:300]}")
+
+            best_fit_ids = parsed.get("best_fit", [])
+            longest_dur_ids = parsed.get("longest_duration", [])
+            latency_aware_ids = parsed.get("latency_aware", [])
+            load_balanced_ids = parsed.get("load_balanced", [])
 
             allocation_result = self.allocate_apps(
                 best_fit_ids, longest_dur_ids,
                 latency_aware_ids, load_balanced_ids
             )
+
+            try:
+                input_tokens = response.metrics.get("input_tokens", 0) or response.metrics.get("prompt_tokens", 0) or 0
+                output_tokens = response.metrics.get("output_tokens", 0) or response.metrics.get("completion_tokens", 0) or 0
+            except Exception:
+                input_tokens = len(state_json) // 4
+                output_tokens = len(content) // 4
+
+            parsed_result = loads(allocation_result) if isinstance(allocation_result, str) else {}
+            print(f"  [LLM] Step {model.scheduler.steps} | GS_{self.id} | "
+                  f"in: ~{input_tokens} tok | out: ~{output_tokens} tok | "
+                  f"prov: {parsed_result.get('provisioned', 0)} "
+                  f"fail: {parsed_result.get('failed', 0)}")
+
+            if verbose:
+                print(f"\n{'='*60}")
+                print(f"  LLM RESPONSE - Step {model.scheduler.steps} | GS_{self.id}")
+                print(f"{'='*60}")
+                print(f"  Raw: {content}")
+                print(f"  Parsed: best_fit={best_fit_ids}  longest_duration={longest_dur_ids}")
+                print(f"          latency_aware={latency_aware_ids}  load_balanced={load_balanced_ids}")
+                print(f"  Result: {allocation_result}")
+                print(f"{'='*60}\n")
+
             output_data = {
                 "step": model.scheduler.steps,
                 "ground_station": self.id,
@@ -213,8 +339,12 @@ class GroundStation(ComponentManager):
             }
         except Exception:
             traceback.print_exc()
-            print(f"  [LLM] Step {model.scheduler.steps} | GS_{self.id} | "
-                  f"-> FALLBACK to best_fit_allocation")
+            print(f"  [LLM] Step {model.scheduler.steps} | GS_{self.id} | FALLBACK to best_fit_allocation")
+            if verbose:
+                print(f"{'='*60}")
+                print(f"  LLM FALLBACK - Step {model.scheduler.steps} | GS_{self.id}")
+                print(f"{'='*60}")
+                print(f"{'='*60}\n")
             from leosim.components.allocation_algorithms import best_fit_allocation
             best_fit_allocation(model, parameters)
             output_data = {

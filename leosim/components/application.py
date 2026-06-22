@@ -199,7 +199,7 @@ class Application(ComponentManager):
             process_unit (object): The target host where the application 
                 will be provisioned.
         """
-        if self.completed:
+        if self.completed or self.being_provisioned:
             return
 
         self.being_provisioned = True
@@ -261,7 +261,7 @@ class Application(ComponentManager):
                 "mem": app.memory_demand,
                 "sto": app.storage_demand,
                 "available": app.available,
-                "pending": pending,
+                "pending": pending and not app.being_provisioned,
                 "remaining_time": max(remaining, 0),
                 "user": app.user.id if app.user else None,
                 "provisioned_on": app.process_unit.id if app.process_unit else None,
