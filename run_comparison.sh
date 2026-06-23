@@ -5,6 +5,8 @@ DATASET="datasets/rnp.gml"
 SATELLITES="datasets/satellites_brazil.json"
 SCENARIO="hybrid"
 NUM_STEPS=15
+NUM_USERS=100
+NUM_SATELLITES=25
 REPETITIONS=1
 
 usage() {
@@ -14,6 +16,8 @@ usage() {
     echo "  --dataset <path>       Ground topology GML file (default: $DATASET)"
     echo "  --satellites <path>    Satellite trajectory JSON (default: $SATELLITES)"
     echo "  --scenario <name>      Simulation scenario (default: $SCENARIO)"
+    echo "  --num_users <n>        Number of users (default: $NUM_USERS)"
+    echo "  --num_satellites <n>   Number of satellites (default: $NUM_SATELLITES)"
     echo "  --num_steps <n>        Number of simulation steps (default: $NUM_STEPS)"
     echo "  --repetitions <n>      Number of repetitions (default: $REPETITIONS)"
     echo "  -h, --help             Show this help message"
@@ -25,6 +29,8 @@ while [[ $# -gt 0 ]]; do
         --dataset) DATASET="$2"; shift 2 ;;
         --satellites) SATELLITES="$2"; shift 2 ;;
         --scenario) SCENARIO="$2"; shift 2 ;;
+        --num_users) NUM_USERS="$2"; shift 2 ;;
+        --num_satellites) NUM_SATELLITES="$2"; shift 2 ;;
         --num_steps) NUM_STEPS="$2"; shift 2 ;;
         --repetitions) REPETITIONS="$2"; shift 2 ;;
         -h|--help) usage ;;
@@ -52,6 +58,8 @@ for algo in "${ALGORITHMS[@]}"; do
         --satellites "$SATELLITES" \
         --algorithm "$algo" \
         --scenario "$SCENARIO" \
+        --num_users "$NUM_USERS" \
+        --num_satellites "$NUM_SATELLITES" \
         --num_steps "$NUM_STEPS" \
         --repetitions "$REPETITIONS"
 
