@@ -237,7 +237,12 @@ class GroundStation(ComponentManager):
                     f"-> prov={r['provisioned']} fail={r['failed']}\n"
                 )
 
-        prompt = f"{pending_summary}\nNetwork State (JSON):\n{state_json}\n\n{history_context}\nOutput JSON allocation."
+        prompt = (
+            f"{pending_summary}\nNetwork State (JSON):\n{state_json}\n\n{history_context}\n"
+            "Respond ONLY with valid JSON (no markdown, no code fences, no extra text) in this exact format:\n"
+            '{"best_fit": [list of app IDs as ints], "longest_duration": [list of app IDs as ints], '
+            '"latency_aware": [list of app IDs as ints], "load_balanced": [list of app IDs as ints]}'
+        )
 
         verbose = parameters.get("verbose", False)
         pending = sum(1 for a in state["applications"].values() if a.get("pending"))
@@ -279,8 +284,15 @@ class GroundStation(ComponentManager):
             response = self.offloading_agent.run(prompt, max_retries=1)
             content = response.content.strip()
 
+            import re
+            content = re.sub(r'^```(?:json)?\s*', '', content, flags=re.MULTILINE)
+            content = re.sub(r'\s*```$', '', content, flags=re.MULTILINE)
+
             start = content.find('{')
             end = content.rfind('}')
+            if start == -1 or end == -1 or end <= start:
+                start = content.find('[')
+                end = content.rfind(']')
             if start == -1 or end == -1 or end <= start:
                 raise ValueError(f"No JSON found in response: {content[:200]}")
 
@@ -291,9 +303,15 @@ class GroundStation(ComponentManager):
             except Exception:
                 import ast
                 try:
-                    parsed = ast.literal_eval(json_str)
-                except Exception as e2:
-                    raise ValueError(f"Failed to parse LLM response: {e2} | raw block: {json_str[:300]}")
+                    json_str_single = re.sub(r"(?<!\\)'", '"', json_str)
+                    json_str_single = re.sub(r',\s*\}', '}', json_str_single)
+                    json_str_single = re.sub(r',\s*\]', ']', json_str_single)
+                    parsed = loads(json_str_single)
+                except Exception:
+                    try:
+                        parsed = ast.literal_eval(json_str)
+                    except Exception as e2:
+                        raise ValueError(f"Failed to parse LLM response: {e2} | raw block: {json_str[:300]}")
 
             best_fit_ids = parsed.get("best_fit", [])
             longest_dur_ids = parsed.get("longest_duration", [])

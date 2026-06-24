@@ -53,7 +53,7 @@ for algo in "${ALGORITHMS[@]}"; do
     echo "========================================"
     echo ""
 
-    python main.py \
+    python3 main.py \
         --dataset "$DATASET" \
         --satellites "$SATELLITES" \
         --algorithm "$algo" \

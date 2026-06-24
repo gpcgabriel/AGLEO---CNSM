@@ -5,3 +5,4 @@ networkx==3.5
 numpy==2.2.4
 geopy==2.4.1
 requests==2.32.3
+openai==2.24.0
