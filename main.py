@@ -46,7 +46,7 @@ def main(args):
 
         print(f"\n--- Repetition {rep}/{args.repetitions} ---")
 
-        current_seed = rep
+        current_seed = args.seed + rep - 1 if args.seed is not None else rep
         total_resources = 0
         scenario = args.scenario
 
@@ -55,7 +55,7 @@ def main(args):
         # ======================
 
         clear_all_components()
-        random.seed(current_seed)
+        ds.rng.seed(current_seed)
 
         print(f"  Generating Dataset: {scenario}")
 
@@ -168,6 +168,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_steps", type=int, default=15)
     parser.add_argument("--logs_dir", default="logs")
     parser.add_argument("--repetitions", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for dataset generation (default: repetition number)")
     parser.add_argument("--v", action="store_true", dest="verbose", help="Verbose output: print LLM prompt and response")
 
     args = parser.parse_args()

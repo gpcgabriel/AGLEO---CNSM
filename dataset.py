@@ -1,6 +1,8 @@
 from leosim import *
 from dataset_generator import *
-from random import choices, randint, sample
+from random import Random
+
+rng = Random()
 
 def load_topology(ground_topology: str, leo_topology, max_satellites) -> Topology:
     t = load_ground_topology_from_gml(ground_topology)
@@ -35,38 +37,39 @@ def create_users(num_users: int) -> None:
     # Collect available coordinates from satellite traces
     coordinates_history = [coor for sat in Satellite.all() for coor in sat.coordinates_trace if coor is not None]
 
-    for coordinates in choices(coordinates_history, k=num_users):
+    for coordinates in rng.choices(coordinates_history, k=num_users):
         user = create_user(coordinates)
         user.mobility_model = random_mobility_model
 
         create_application_to_user(
             user=user,
-            cpu_demand=randint(10, 50),
-            memory_demand=randint(10, 50),
-            access_class=FixedDurationAccessModel
+            cpu_demand=rng.randint(10, 50),
+            memory_demand=rng.randint(10, 50),
+            access_class=FixedDurationAccessModel,
+            rng=rng
         )
 
 def add_process_unit_to_satellites(topology, num_process_units: int):
-    targets = sample(Satellite.all(), min(num_process_units, Satellite.count()))
+    targets = rng.sample(Satellite.all(), min(num_process_units, Satellite.count()))
     
     for satellite in targets:
         unit = ProcessUnit(
-            cpu=randint(30, 50),
-            memory=randint(30, 50),
-            storage=randint(30, 50)
+            cpu=rng.randint(30, 50),
+            memory=rng.randint(30, 50),
+            storage=rng.randint(30, 50)
         )
         unit.coordinates = satellite.coordinates
         create_link(unit, satellite, 1, bandwidth=NetworkLink.default_bandwidth, topology=topology)
         satellite.process_unit = unit
 
 def add_process_unit_to_ground_stations(topology, num_process_units: int):
-    targets = sample(GroundStation.all(), min(num_process_units, GroundStation.count()))
+    targets = rng.sample(GroundStation.all(), min(num_process_units, GroundStation.count()))
     
     for station in targets:
         unit = ProcessUnit(
-            cpu=randint(50, 100),
-            memory=randint(50, 100),
-            storage=randint(50, 100)
+            cpu=rng.randint(50, 100),
+            memory=rng.randint(50, 100),
+            storage=rng.randint(50, 100)
         )
         unit.coordinates = station.coordinates
         create_link(unit, station, 10, NetworkLink.default_bandwidth, topology=topology)

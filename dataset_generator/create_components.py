@@ -1,6 +1,6 @@
 from leosim.components import User,Application, FixedDurationAccessModel,Topology, NetworkLink, Satellite, mesh_network
 from json import load
-from random import choices
+
 from time import sleep
 import requests
 
@@ -30,8 +30,13 @@ def create_application_to_user(
         storage_demand : int = 0,
         state : int = 0,
         sla : int = 0,
-        access_class: type = FixedDurationAccessModel
+        access_class: type = FixedDurationAccessModel,
+        rng = None
     ):
+    
+    if rng is None:
+        from random import Random
+        rng = Random()
     
     app = Application(
         cpu_demand=cpu_demand,
@@ -47,10 +52,10 @@ def create_application_to_user(
         user=user,
         application=app,
         start=1,
-        duration_values=choices(values, k=5),
-        interval_values=choices(values, k=5),
-        connection_duration_values=choices(values, k=5),
-        connection_interval_values=choices(values, k=5)
+        duration_values=rng.choices(values, k=5),
+        interval_values=rng.choices(values, k=5),
+        connection_duration_values=rng.choices(values, k=5),
+        connection_interval_values=rng.choices(values, k=5)
     )
     
     user.connection_to_application(application=app, access_model=access_model)

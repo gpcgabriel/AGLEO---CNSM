@@ -48,18 +48,15 @@ class GroundStation(ComponentManager):
                          options={"temperature": 0, "num_ctx": 8192}),
             instructions=[
                 "You allocate apps in a LEO satellite network.",
-                "Objective: maximize provisioned apps. Choose a strategy per app from four options.",
+                "Objective: maximize provisioned apps. Choose a strategy per app from two options.",
                 "",
                 "best_fit: packs apps into the tightest-fitting PU, minimizing wasted resources.",
                 "",
                 "longest_duration: picks the satellite with the longest remaining visibility time for the user.",
                 "",
-                "latency_aware: assigns to the PU closest to the user (minimum geodesic distance), minimizing propagation delay.",
-                "",
-                "load_balanced: distributes apps to the PU with the lowest current utilization (CPU + MEM + STORAGE).",
-                "",
-                "Output ONLY a JSON object with four arrays of app IDs. No other text.",
-                "Example: {\"best_fit\": [1, 2], \"longest_duration\": [3], \"latency_aware\": [4], \"load_balanced\": [5]}",
+                "Output ONLY a JSON object with two arrays of app IDs. No other text.",
+                "Example: {\"best_fit\": [1, 2], \"longest_duration\": [3]}",
+                "Each app ID must appear in exactly one array.",
             ],
         )
 
@@ -82,8 +79,7 @@ class GroundStation(ComponentManager):
         }
         return component
 
-    def allocate_apps(self, best_fit_apps: list, longest_duration_apps: list,
-                      latency_aware_apps: list, load_balanced_apps: list) -> str:
+    def allocate_apps(self, best_fit_apps: list, longest_duration_apps: list) -> str:
         from leosim.components.allocation_algorithms.hybrid_allocation import hybrid_allocation
 
         model = ComponentManager.model
@@ -93,7 +89,7 @@ class GroundStation(ComponentManager):
         results = hybrid_allocation(
             model, self.llm_params,
             best_fit_apps, longest_duration_apps,
-            latency_aware_apps, load_balanced_apps
+            [], []
         )
 
         summary = f"Provisioned: {results['provisioned']}, Already: {results['already']}, Failed: {results['failed']}"
@@ -103,8 +99,6 @@ class GroundStation(ComponentManager):
             "step": model.scheduler.steps,
             "best_fit_apps": best_fit_apps,
             "longest_duration_apps": longest_duration_apps,
-            "latency_aware_apps": latency_aware_apps,
-            "load_balanced_apps": load_balanced_apps,
             "results": results,
         })
 
@@ -259,15 +253,13 @@ class GroundStation(ComponentManager):
                 history_context += (
                     f"Step {h['step']}: "
                     f"bf={h['best_fit_apps']} ld={h['longest_duration_apps']} "
-                    f"la={h['latency_aware_apps']} lb={h['load_balanced_apps']} "
                     f"-> prov={r['provisioned']} fail={r['failed']}\n"
                 )
 
         prompt = (
             f"{pending_summary}\nNetwork State (JSON):\n{state_json}\n\n{history_context}\n"
             "Respond ONLY with valid JSON (no markdown, no code fences, no extra text) in this exact format:\n"
-            '{"best_fit": [list of app IDs as ints], "longest_duration": [list of app IDs as ints], '
-            '"latency_aware": [list of app IDs as ints], "load_balanced": [list of app IDs as ints]}'
+            '{"best_fit": [list of app IDs as ints], "longest_duration": [list of app IDs as ints]}'
         )
 
         verbose = parameters.get("verbose", False)
@@ -341,12 +333,12 @@ class GroundStation(ComponentManager):
 
             best_fit_ids = parsed.get("best_fit", [])
             longest_dur_ids = parsed.get("longest_duration", [])
-            latency_aware_ids = parsed.get("latency_aware", [])
-            load_balanced_ids = parsed.get("load_balanced", [])
+
+            seen = set(best_fit_ids)
+            longest_dur_ids = [a for a in longest_dur_ids if a not in seen]
 
             allocation_result = self.allocate_apps(
-                best_fit_ids, longest_dur_ids,
-                latency_aware_ids, load_balanced_ids
+                best_fit_ids, longest_dur_ids
             )
 
             try:
@@ -368,7 +360,6 @@ class GroundStation(ComponentManager):
                 print(f"{'='*60}")
                 print(f"  Raw: {content}")
                 print(f"  Parsed: best_fit={best_fit_ids}  longest_duration={longest_dur_ids}")
-                print(f"          latency_aware={latency_aware_ids}  load_balanced={load_balanced_ids}")
                 print(f"  Result: {allocation_result}")
                 print(f"{'='*60}\n")
 
@@ -377,8 +368,6 @@ class GroundStation(ComponentManager):
                 "ground_station": self.id,
                 "best_fit": best_fit_ids,
                 "longest_duration": longest_dur_ids,
-                "latency_aware": latency_aware_ids,
-                "load_balanced": load_balanced_ids,
                 "result": allocation_result,
             }
         except Exception:

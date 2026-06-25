@@ -8,6 +8,7 @@ NUM_STEPS=15
 NUM_USERS=100
 NUM_SATELLITES=25
 REPETITIONS=1
+SEED=""
 
 usage() {
     echo "Usage: $0 [options]"
@@ -20,6 +21,7 @@ usage() {
     echo "  --num_satellites <n>   Number of satellites (default: $NUM_SATELLITES)"
     echo "  --num_steps <n>        Number of simulation steps (default: $NUM_STEPS)"
     echo "  --repetitions <n>      Number of repetitions (default: $REPETITIONS)"
+    echo "  --seed <n>             Random seed (default: repetition number)"
     echo "  -h, --help             Show this help message"
     exit 0
 }
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
         --num_satellites) NUM_SATELLITES="$2"; shift 2 ;;
         --num_steps) NUM_STEPS="$2"; shift 2 ;;
         --repetitions) REPETITIONS="$2"; shift 2 ;;
+        --seed) SEED="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1"; usage ;;
     esac
@@ -53,6 +56,11 @@ for algo in "${ALGORITHMS[@]}"; do
     echo "========================================"
     echo ""
 
+    seed_arg=()
+    if [ -n "$SEED" ]; then
+        seed_arg=(--seed "$SEED")
+    fi
+
     python3 main.py \
         --dataset "$DATASET" \
         --satellites "$SATELLITES" \
@@ -61,7 +69,8 @@ for algo in "${ALGORITHMS[@]}"; do
         --num_users "$NUM_USERS" \
         --num_satellites "$NUM_SATELLITES" \
         --num_steps "$NUM_STEPS" \
-        --repetitions "$REPETITIONS"
+        --repetitions "$REPETITIONS" \
+        "${seed_arg[@]}"
 
     if [ $? -ne 0 ]; then
         echo "ERROR: $algo failed. Aborting."
