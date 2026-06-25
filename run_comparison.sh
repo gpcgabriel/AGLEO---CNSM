@@ -49,6 +49,12 @@ ALGORITHMS=(
     "agentic"
 )
 
+if [ -d "logs" ]; then
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    mv "logs" "logs_$timestamp"
+    echo "Renamed existing logs/ to logs_$timestamp"
+fi
+
 for algo in "${ALGORITHMS[@]}"; do
     echo ""
     echo "========================================"
