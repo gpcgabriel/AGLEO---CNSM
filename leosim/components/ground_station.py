@@ -150,6 +150,25 @@ class GroundStation(ComponentManager):
         pending_app_ids = [
             int(k.split("_")[1]) for k, v in all_apps.items() if v.get("pending")
         ]
+        if not pending_app_ids:
+            print(f"  [LLM] Step {model.scheduler.steps} | GS_{self.id} | SKIP (no pending apps)")
+            return
+
+        has_reachable_satellite = False
+        from geopy.distance import geodesic
+        from math import sqrt
+        for sat in Satellite.all():
+            if sat.is_gateway and sat.active and sat.coordinates and self.coordinates:
+                gd = geodesic(self.coordinates[:2], sat.coordinates[:2]).kilometers
+                ad = (self.coordinates[2] - sat.coordinates[2]) / 1000
+                dist = sqrt(gd ** 2 + ad ** 2)
+                if dist < min(self.max_connection_range, sat.max_connection_range):
+                    has_reachable_satellite = True
+                    break
+        if not has_reachable_satellite and not self.process_unit:
+            print(f"  [LLM] Step {model.scheduler.steps} | GS_{self.id} | SKIP (no satellites/PUs in range)")
+            return
+
         pending_set = set(pending_app_ids)
 
         all_users = User.export_users()
@@ -187,6 +206,13 @@ class GroundStation(ComponentManager):
                 trimmed_pu_ids.add(pu["id"])
         for gs_pu in (self.process_unit or []):
             trimmed_pu_ids.add(gs_pu.id)
+
+        for sinfo in trimmed_sats.values():
+            sinfo.pop("range", None)
+            sinfo.pop("gateway", None)
+            sinfo.pop("pu", None)
+            if "future" in sinfo:
+                sinfo["future"] = sinfo["future"][:3]
 
         all_pus = ProcessUnit.export_processunits()
         trimmed_pus = {
