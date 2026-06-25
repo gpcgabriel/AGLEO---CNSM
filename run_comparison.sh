@@ -41,8 +41,8 @@ done
 ALGORITHMS=(
     "best_fit_allocation"
     "longest_duration_allocation"
-    "latency_aware_allocation"
-    "load_balanced_allocation"
+    # "latency_aware_allocation"
+    # "load_balanced_allocation"
     "agentic"
 )
 

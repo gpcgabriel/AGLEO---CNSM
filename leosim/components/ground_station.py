@@ -222,7 +222,7 @@ class GroundStation(ComponentManager):
 
         trimmed_apps = {
             aid: ainfo for aid, ainfo in all_apps.items()
-            if int(aid.split("_")[1]) in pending_set or ainfo.get("available")
+            if int(aid.split("_")[1]) in pending_set
         }
 
         trimmed_topology = model.topology.export_topology()
